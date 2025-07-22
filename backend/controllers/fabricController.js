@@ -74,15 +74,20 @@ exports.sendBillViaWhatsApp = async (req, res) => {
   }
 };
 
-// 🧾 Bill filename lookup
-exports.getBillNameByJobId = async (req, res) => {
+
+// ✅ NEW: GET /billname/:jobId
+exports.getBillNameByJobId = (req, res) => {
   const jobId = req.params.jobId;
   const dir = path.join(__dirname, "../bills");
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
-
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
-  if (!file) return res.status(404).json({ error: "No bill found" });
-  res.json({ billName: file });
+  if (!fs.existsSync(dir)) {
+    return res.status(404).json({ error: "Bill directory not found" });
+  }
+  const files = fs.readdirSync(dir);
+  const file = files.find((f) => f.includes(jobId));
+  if (!file) {
+    return res.status(404).json({ error: "Bill not found" });
+  }
+  res.json({ fileName: file });
 };
 
 // 📦 Create Job
