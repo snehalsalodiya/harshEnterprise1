@@ -306,3 +306,28 @@ exports.getRates = async (req, res) => {
   if (!config) return res.status(404).json({ error: "Rates not set" });
   res.json(config);
 };
+
+
+
+exports.getJobSummaryWithExpenses = async (req, res) => {
+    const job = await FabricJob.findOne({
+        jobId: req.params.jobId
+    });
+    if (!job) return res.status(404).json({
+        error: "Job not found"
+    });
+    const expenses = await Expense.find({
+        description: {
+            $regex: job.jobId
+        }
+    });
+    const coating = expenses.filter(e => e.type === "coated").reduce((sum, e) => sum + e.amount, 0);
+    const washing = expenses.filter(e => e.type === "washed").reduce((sum, e) => sum + e.amount, 0);
+    res.json({
+        partyName: job.partyName,
+        fabricType: job.fabricType,
+        stage: job.stage,
+        coatingBill: coating,
+        washingBill: washing
+    });
+}; 
