@@ -182,7 +182,7 @@ exports.updateStage = async (req, res) => {
       // await sendWhatsAppPDF(mobileNumber, billUrl, job.partyName, job.jobId);
       // console.log("✅ Bill sent via WhatsApp");
 
-      
+
     } catch (err) {
       console.error("❌ Failed to send WhatsApp or generate bill:", err.message);
     }
@@ -224,37 +224,46 @@ exports.getRates = async (req, res) => {
     res.json(config);
 };
 
-
-
-
-exports.getBillByJobId = (req, res) => {
-    const jobId = req.params.jobId;
-    const dir = path.join(__dirname, '../bills');
-    if (!fs.existsSync(dir)) {
-        return res.status(404).json({
-            error: "Bill directory not found"
-        });
-    } // Look for a file that includes the jobId in its name   
-    const files = fs.readdirSync(dir);
-    const file = files.find(f => f.includes(jobId));
-    if (!file) {
-        return res.status(404).json({
-            error: "Bill file not found for this job"
-        });
-    }
-    const filePath = path.join(dir, file);
-   res.setHeader('Content-Type', 'application/pdf');
-res.setHeader('Content-Disposition', `inline; filename="${file}"`);
-res.sendFile(filePath, (err) => {
-  if (err) {
-    console.error("Error sending bill file:", err);
-    res.status(500).json({
-      error: "Error sending bill file"
-    });
+exports.getBillLink = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) {
+    return res.status(404).json({ error: "Bill directory not found" });
   }
-});
 
+  const files = fs.readdirSync(dir);
+  const file = files.find((f) => f.includes(jobId));
+  if (!file) {
+    return res.status(404).json({ error: "Bill not found for this job ID" });
+  }
+
+  const fullUrl = `${process.env.BASE_URL}/bills/${file}`; // ✅ Public file path
+  res.json({ url: fullUrl });
 };
+
+
+// GET /bill/by-job/:jobId
+exports.getBillByJobId = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) {
+    return res.status(404).json({ error: "Bill directory not found" });
+  }
+
+  const files = fs.readdirSync(dir);
+  const file = files.find((f) => f.includes(jobId));
+  if (!file) {
+    return res.status(404).json({ error: "Bill not found for this job ID" });
+  }
+
+  const filePath = path.join(dir, file);
+
+  // ✅ Serve the actual PDF file with proper headers
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", 'inline; filename="' + file + '"');
+  res.sendFile(filePath);
+};
+
 
 exports.generatePDFBill = async (job) => {
     const dir = path.join(__dirname, '../bills');

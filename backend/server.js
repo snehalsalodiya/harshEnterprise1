@@ -2,9 +2,13 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 require("dotenv").config();
+const path = require("path");
 
 const fabricRoutes = require("./Router/fabricRouter");
 const app = express();
+
+
+
 
 // ✅ Enable CORS
 app.use(
@@ -18,6 +22,12 @@ app.options("*", cors()); // handle preflight
 
 // Middleware
 app.use(express.json());
+
+
+
+// Publicly serve PDFs
+app.use("/bills", express.static(path.join(__dirname, "bills")));
+
 
 // MongoDB
 mongoose

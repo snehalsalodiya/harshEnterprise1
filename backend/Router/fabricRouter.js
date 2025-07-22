@@ -38,6 +38,10 @@ router.get('/get-rates', ctrl.getRates);
 router.get("/bill/by-job/:jobId", ctrl.getBillByJobId);
 
 
+
+router.get("/generate-bill-link/:jobId", ctrl.getBillLink);
+
+
 router.get("/billname/:jobId", ctrl.getBillNameByJobId);
 router.post("/send-bill", ctrl.sendBillViaWhatsApp);
 
