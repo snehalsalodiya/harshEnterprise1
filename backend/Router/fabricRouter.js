@@ -39,6 +39,7 @@ router.get("/bill/by-job/:jobId", ctrl.getBillByJobId);
 
 
 router.get("/billname/:jobId", ctrl.getBillNameByJobId);
+router.post("/send-bill", ctrl.sendBillViaWhatsApp);
 
 
 
@@ -68,7 +69,6 @@ router.get("/dashboard/chart-data", ctrl.getChartData);
 
 
 
-router.post("/send-bill", ctrl.sendPdfToWhatsApp);
 
 
 module.exports = router;     

@@ -11,6 +11,26 @@ const twilio = require("twilio");
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const axios = require("axios"); // ✅ Make sure axios is required
 
+
+// POST /api/fabric/send-bill
+exports.sendBillViaWhatsApp = async (req, res) => {
+  const { number, fileUrl, partyName, jobId } = req.body;
+
+  if (!number || !fileUrl || !partyName || !jobId) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  try {
+    await sendWhatsAppPDF(number, fileUrl, partyName, jobId);
+    res.json({ message: "PDF sent via WhatsApp" });
+  } catch (err) {
+    console.error("❌ Error sending WhatsApp PDF:", err);
+    res.status(500).json({ error: "Failed to send PDF" });
+  }
+};
+
+
+
 const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   try {
     // Download the file from the URL
