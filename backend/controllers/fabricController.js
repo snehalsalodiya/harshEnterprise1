@@ -33,33 +33,11 @@ exports.sendBillViaWhatsApp = async (req, res) => {
 
 const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   try {
-    // Download the file from the URL
-    const response = await axios.get(fileUrl, { responseType: "arraybuffer" });
-    const fileData = Buffer.from(response.data, "binary");
-    const fileMime = mime.lookup(fileUrl);
-
-    // Upload to Twilio Media
-    const mediaUploadRes = await axios.post(
-      "https://mcs.us1.twilio.com/v1/Services/MGaa68392be7d37cf2b16a4dc1490438c9/Media",
-      fileData,
-      {
-        headers: {
-          Authorization:
-            "Basic " +
-            Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64"),
-          "Content-Type": fileMime,
-          "Content-Length": fileData.length,
-        },
-      }
-    );
-
-    const mediaUrl = mediaUploadRes.data?.links?.content_direct_temporary;
-
     await client.messages.create({
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      from: process.env.TWILIO_WHATSAPP_NUMBER, // e.g., 'whatsapp:+14155238886'
       to: `whatsapp:+91${number}`,
       body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
-      mediaUrl: [mediaUrl],
+      mediaUrl: [fileUrl], // ✅ Use public PDF URL directly
     });
 
     console.log("✅ WhatsApp PDF sent to", number);
@@ -100,23 +78,6 @@ exports.getChartData = async (req, res) => {
   ]);
   res.json({ stageCounts, monthWiseExpenses });
 };
-
-// 📄 Latest PDF Bill File
-exports.getLatestBill = (req, res) => {
-  const dir = path.join(__dirname, "../bills");
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill folder missing" });
-
-  const files = fs.readdirSync(dir).filter(file => file.endsWith(".pdf"));
-  if (files.length === 0) return res.status(404).json({ error: "No bills found" });
-
-  const latestFile = files
-    .map(f => ({ file: f, time: fs.statSync(path.join(dir, f)).mtime.getTime() }))
-    .sort((a, b) => b.time - a.time)[0];
-
-  const billPath = `/api/fabric/bill/${latestFile.file}`;
-  res.json({ file: latestFile.file, path: billPath }); // Don't use res.download here
-};
-
 
 
 
@@ -457,6 +418,7 @@ exports.getBillNameByJobId = async (req, res) => {
     const files = fs.readdirSync(dir);
     const matchingFile = files.find(file => file.includes(jobId) && file.endsWith('.pdf'));
 
+     
     if (!matchingFile) {
       return res.status(404).json({ error: "Bill PDF not found for this jobId" });
     }
