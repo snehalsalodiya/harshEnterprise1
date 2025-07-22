@@ -9,21 +9,16 @@ const mime = require("mime-types");
 const twilio = require("twilio");
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const axios = require("axios"); // ✅ Make sure axios is required
 
-exports.sendPdfToWhatsApp = async (req, res) => {
-  const { number, fileName } = req.body;
-
+const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   try {
-    const filePath = path.join(__dirname, "../bills", fileName);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "PDF not found" });
-    }
+    // Download the file from the URL
+    const response = await axios.get(fileUrl, { responseType: "arraybuffer" });
+    const fileData = Buffer.from(response.data, "binary");
+    const fileMime = mime.lookup(fileUrl);
 
-    const fileMime = mime.lookup(filePath);
-    const fileData = fs.readFileSync(filePath);
-    const fileBase64 = fileData.toString("base64");
-
-    // Upload media to Twilio
+    // Upload to Twilio Media
     const mediaUploadRes = await axios.post(
       "https://mcs.us1.twilio.com/v1/Services/default/Media",
       fileData,
@@ -40,18 +35,17 @@ exports.sendPdfToWhatsApp = async (req, res) => {
 
     const mediaUrl = mediaUploadRes.data?.links?.content_direct_temporary;
 
-    // Send WhatsApp message
     await client.messages.create({
       from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: `whatsapp:${number}`,
-      body: `Here is your bill: ${fileName}`,
+      to: `whatsapp:+91${number}`,
+      body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
       mediaUrl: [mediaUrl],
     });
 
-    res.json({ message: "PDF sent via WhatsApp" });
+    console.log("✅ WhatsApp PDF sent to", number);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Failed to send PDF" });
+    console.error("❌ Failed to send WhatsApp PDF:", err.message);
+    throw err;
   }
 };
 
