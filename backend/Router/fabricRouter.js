@@ -1,57 +1,28 @@
-
-const express = require("express"); 
-
+const express = require("express");
 const Expense = require("../models/Expense");
+const router = express.Router();
+const ctrl = require("../controllers/fabricController");
 
-
-
-
-const router = express.Router(); 
-const ctrl = require("../controllers/fabricController");  
-
-
-// Example route
+// Test route
 router.get("/", (req, res) => {
   res.send("Fabric API is working!");
 });
 
-
-
-
-
-
-
-router.post("/job", ctrl.createJob); 
-router.post("/update-stage", ctrl.updateStage); 
+// Job routes
+router.post("/job", ctrl.createJob);
+router.post("/update-stage", ctrl.updateStage);
 router.post("/scan", ctrl.scanJob);
 
-
+// Bill handling
 router.get("/bill/:fileName", ctrl.getBill);
-
-router.post("/expense", ctrl.addExpense); 
-router.get("/expenses", ctrl.getExpenses); 
-router.get("/expenses/search", ctrl.searchExpenses);
-router.get("/jobs/search", ctrl.searchJobs);
-router.get("/summary/:jobId", ctrl.getJobSummaryWithExpenses);  
-router.post('/set-rates', ctrl.setRates);
-router.get('/get-rates', ctrl.getRates);
-router.get("/bill/by-job/:jobId", ctrl.getBillByJobId);
-
-
-
 router.get("/generate-bill-link/:jobId", ctrl.getBillLink);
-
-
 router.get("/billname/:jobId", ctrl.getBillNameByJobId);
-
-
-
 router.post("/send-bill", ctrl.sendBillViaWhatsApp);
 
-
-
-
-// Add to fabricRouter.js
+// Expense routes
+router.post("/expense", ctrl.addExpense);
+router.get("/expenses", ctrl.getExpenses);
+router.get("/expenses/search", ctrl.searchExpenses);
 router.delete('/expense/:id', async (req, res) => {
   try {
     await Expense.findByIdAndDelete(req.params.id);
@@ -61,7 +32,6 @@ router.delete('/expense/:id', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 router.put('/expense/:id', async (req, res) => {
   const { amount } = req.body;
   const gst = amount * 0.05;
@@ -69,13 +39,14 @@ router.put('/expense/:id', async (req, res) => {
   res.json({ message: 'Updated' });
 });
 
-
+// Search & dashboard
+router.get("/jobs/search", ctrl.searchJobs);
+router.get("/summary/:jobId", ctrl.getJobSummaryWithExpenses);
 router.get("/dashboard/stats", ctrl.getStats);
 router.get("/dashboard/chart-data", ctrl.getChartData);
 
+// Rate config
+router.post('/set-rates', ctrl.setRates);
+router.get('/get-rates', ctrl.getRates);
 
-
-
-
-
-module.exports = router;     
+module.exports = router;
