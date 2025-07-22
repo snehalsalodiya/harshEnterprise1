@@ -9,20 +9,80 @@ const twilio = require("twilio");
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const twilioPhoneNumber = "whatsapp:+14155238886";
 
-// ✅ WhatsApp PDF Sender
-const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
+// 📥 Serve bill by job ID
+exports.getBillByJobId = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, '../bills');
+
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
+  if (!file) return res.status(404).json({ error: `Bill not found for jobId: ${jobId}` });
+
+  const filePath = path.join(dir, file);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(filePath);
+};
+
+// 📜 Serve PDF by filename
+exports.getBill = (req, res) => {
+  const filePath = path.join(__dirname, "../bills", req.params.fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
+
+  res.setHeader("Content-Disposition", "inline");
+  res.setHeader("Content-Type", "application/pdf");
+  res.sendFile(filePath);
+};
+
+// 🔗 Generate Bill Link by jobId
+exports.getBillLink = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId));
+  if (!file) return res.status(404).json({ error: "No bill found" });
+
+  const fullUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
+  res.json({ url: fullUrl });
+};
+
+// 📲 Send Bill via WhatsApp (manual)
+exports.sendBillViaWhatsApp = async (req, res) => {
+  const { jobId, number, partyName } = req.body;
+  const dir = path.join(__dirname, "../bills");
+
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
+  if (!file) return res.status(404).json({ error: "Bill PDF not found" });
+
+  const fileUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
+
   try {
-    await client.messages.create({
+    const msg = await client.messages.create({
       from: twilioPhoneNumber,
       to: `whatsapp:+91${number}`,
       body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
       mediaUrl: [fileUrl],
     });
-    console.log("✅ WhatsApp PDF sent to", number);
+
+    res.json({ success: true, sid: msg.sid });
   } catch (err) {
-    console.error("❌ Failed to send WhatsApp PDF:", err.message);
-    throw err;
+    res.status(500).json({ error: "Failed to send WhatsApp", details: err.message });
   }
+};
+
+// 🧾 Bill filename lookup
+exports.getBillNameByJobId = async (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
+  if (!file) return res.status(404).json({ error: "No bill found" });
+  res.json({ billName: file });
 };
 
 // 📦 Create Job
@@ -37,36 +97,12 @@ exports.createJob = async (req, res) => {
     const job = new FabricJob({ jobId, partyName, fabricType, quantity, rate, mobileNumber, deliveryDate: null });
     await job.save();
     res.json({ message: "✅ Job created successfully", job });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Error creating job" });
   }
 };
 
-// 📍 Scan Job
-exports.scanJob = async (req, res) => {
-  try {
-    const job = await FabricJob.findOne({ jobId: req.body.jobId.trim() });
-    if (!job) return res.status(404).json({ error: "Job not found" });
-
-    const stages = ["raw", "coated", "printed", "washed", "packed", "delivered"];
-    const currentIdx = stages.indexOf(job.stage);
-    const nextStage = stages[currentIdx + 1] || null;
-
-    res.json({
-      jobId: job.jobId,
-      partyName: job.partyName,
-      fabricType: job.fabricType,
-      quantity: job.quantity,
-      stage: job.stage,
-      nextStage,
-      mobileNumber: job.mobileNumber
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-};
-
-// 🔁 Update Stage
+// 🔄 Update Job Stage
 exports.updateStage = async (req, res) => {
   const jobId = req.body.jobId.trim();
   const stage = req.body.stage;
@@ -93,13 +129,42 @@ exports.updateStage = async (req, res) => {
       try {
         const filePath = await exports.generatePDFBill(job);
         const billUrl = `${process.env.BASE_URL}/api/fabric/bill/${path.basename(filePath)}`;
-        await sendWhatsAppPDF(job.mobileNumber, billUrl, job.partyName, job.jobId);
+        await client.messages.create({
+          from: twilioPhoneNumber,
+          to: `whatsapp:+91${job.mobileNumber}`,
+          body: `Hello ${job.partyName}, your bill for job ${job.jobId} is ready.`,
+          mediaUrl: [billUrl],
+        });
       } catch (err) {
         console.error("❌ Failed to generate/send bill:", err.message);
       }
     }
   } catch (err) {
     res.status(500).json({ error: "Error updating stage" });
+  }
+};
+
+// 📜 Scan Job
+exports.scanJob = async (req, res) => {
+  try {
+    const job = await FabricJob.findOne({ jobId: req.body.jobId.trim() });
+    if (!job) return res.status(404).json({ error: "Job not found" });
+
+    const stages = ["raw", "coated", "printed", "washed", "packed", "delivered"];
+    const currentIdx = stages.indexOf(job.stage);
+    const nextStage = stages[currentIdx + 1] || null;
+
+    res.json({
+      jobId: job.jobId,
+      partyName: job.partyName,
+      fabricType: job.fabricType,
+      quantity: job.quantity,
+      stage: job.stage,
+      nextStage,
+      mobileNumber: job.mobileNumber
+    });
+  } catch {
+    res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -119,7 +184,7 @@ exports.generatePDFBill = async (job) => {
 
   try {
     doc.image(path.join(__dirname, "../Utilities/logo.png"), 250, 30, { width: 100 });
-  } catch { }
+  } catch {}
 
   doc.fontSize(20).fillColor("#80602f").text("Harsh Enterprise", 35, 120);
   doc.fontSize(13).fillColor("#000")
@@ -156,56 +221,7 @@ exports.generatePDFBill = async (job) => {
   return filePath;
 };
 
-// 📲 Send Bill via WhatsApp (manual)
-exports.sendBillViaWhatsApp = async (req, res) => {
-  const { jobId, number, partyName } = req.body;
-  const dir = path.join(__dirname, "../bills");
-
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
-
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
-  if (!file) return res.status(404).json({ error: "Bill PDF not found" });
-
-  const fileUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
-
-  try {
-    const msg = await client.messages.create({
-      from: twilioPhoneNumber,
-      to: `whatsapp:+91${number}`,
-      body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
-      mediaUrl: [fileUrl],
-    });
-
-    res.json({ success: true, sid: msg.sid });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to send WhatsApp", details: err.message });
-  }
-};
-
-// 📜 Serve PDF
-exports.getBill = (req, res) => {
-  const filePath = path.join(__dirname, "../bills", req.params.fileName);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
-
-  res.setHeader("Content-Disposition", "inline");
-  res.setHeader("Content-Type", "application/pdf");
-  res.sendFile(filePath);
-};
-
-// 📥 Generate link to bill PDF
-exports.getBillLink = (req, res) => {
-  const jobId = req.params.jobId;
-  const dir = path.join(__dirname, "../bills");
-
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId));
-  if (!file) return res.status(404).json({ error: "No bill found" });
-
-  const fullUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
-  res.json({ url: fullUrl });
-};
-
-// 📦 Expense logic
+// 📦 Expense Routes
 exports.addExpense = async (req, res) => {
   const { type, description, amount } = req.body;
   if (!type || !amount) return res.status(400).json({ error: "Type & amount required" });
@@ -236,43 +252,35 @@ exports.searchExpenses = async (req, res) => {
   res.json(data);
 };
 
-// 🔍 Job search
+// 🔍 Search Jobs
 exports.searchJobs = async (req, res) => {
   const { partyName } = req.query;
   const jobs = await FabricJob.find({ partyName: { $regex: partyName, $options: "i" } });
   res.json(jobs);
 };
 
-// 📊 Job summary
-exports.getJobSummaryWithExpenses = async (req, res) => {
-  const job = await FabricJob.findOne({ jobId: req.params.jobId });
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  const expenses = await Expense.find({ description: { $regex: job.jobId } });
-  const coating = expenses.filter(e => e.type === "coated").reduce((sum, e) => sum + e.amount, 0);
-  const washing = expenses.filter(e => e.type === "washed").reduce((sum, e) => sum + e.amount, 0);
+// 📊 Dashboard Stats
+exports.getStats = async (req, res) => {
+  const totalJobs = await FabricJob.countDocuments();
+  const totalExpenses = await Expense.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]);
+  const delivered = await FabricJob.countDocuments({ stage: "delivered" });
+  const pending = await FabricJob.countDocuments({ stage: { $ne: "delivered" } });
 
   res.json({
-    partyName: job.partyName,
-    fabricType: job.fabricType,
-    stage: job.stage,
-    coatingBill: coating,
-    washingBill: washing,
+    totalJobs,
+    totalExpenses: totalExpenses[0]?.total || 0,
+    delivered,
+    pending,
   });
 };
 
-// 🧾 Bill filename lookup
-exports.getBillNameByJobId = async (req, res) => {
-  const jobId = req.params.jobId;
-  const dir = path.join(__dirname, "../bills");
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
-
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
-  if (!file) return res.status(404).json({ error: "No bill found" });
-  res.json({ billName: file });
+exports.getChartData = async (req, res) => {
+  const stageCounts = await FabricJob.aggregate([{ $group: { _id: "$stage", count: { $sum: 1 } } }]);
+  const monthWiseExpenses = await Expense.aggregate([{ $group: { _id: { $month: "$date" }, total: { $sum: "$amount" } } }]);
+  res.json({ stageCounts, monthWiseExpenses });
 };
 
-// ⚙️ Rate Config
+// ⚙️ Rates Config
 exports.setRates = async (req, res) => {
   const { coatingRate, washingRate } = req.body;
   if (coatingRate == null || washingRate == null) return res.status(400).json({ error: "Rates required" });
@@ -292,25 +300,4 @@ exports.getRates = async (req, res) => {
   const config = await RateConfig.findOne();
   if (!config) return res.status(404).json({ error: "Rates not set" });
   res.json(config);
-};
-
-// 📈 Dashboard Stats
-exports.getStats = async (req, res) => {
-  const totalJobs = await FabricJob.countDocuments();
-  const totalExpenses = await Expense.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]);
-  const delivered = await FabricJob.countDocuments({ stage: "delivered" });
-  const pending = await FabricJob.countDocuments({ stage: { $ne: "delivered" } });
-
-  res.json({
-    totalJobs,
-    totalExpenses: totalExpenses[0]?.total || 0,
-    delivered,
-    pending,
-  });
-};
-
-exports.getChartData = async (req, res) => {
-  const stageCounts = await FabricJob.aggregate([{ $group: { _id: "$stage", count: { $sum: 1 } } }]);
-  const monthWiseExpenses = await Expense.aggregate([{ $group: { _id: { $month: "$date" }, total: { $sum: "$amount" } } }]);
-  res.json({ stageCounts, monthWiseExpenses });
 };
