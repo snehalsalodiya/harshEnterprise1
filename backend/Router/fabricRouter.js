@@ -38,6 +38,10 @@ router.get('/get-rates', ctrl.getRates);
 router.get("/bill/by-job/:jobId", ctrl.getBillByJobId);
 
 
+router.get("/billname/:jobId", ctrl.getBillNameByJobId);
+
+
+
 
 // Add to fabricRouter.js
 router.delete('/expense/:id', async (req, res) => {
