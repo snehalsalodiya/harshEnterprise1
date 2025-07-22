@@ -1,20 +1,22 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-
 require("dotenv").config();
 
 const fabricRoutes = require("./Router/fabricRouter");
 const app = express();
 
-// Middleware
+// ✅ Enable CORS
 app.use(
   cors({
-    origin: "*",
+    origin: ["http://localhost:5173", "https://harshenterprise123.onrender.com"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
+app.options("*", cors()); // handle preflight
+
+// Middleware
 app.use(express.json());
 
 // MongoDB
