@@ -19,6 +19,8 @@ router.get("/generate-bill-link/:jobId", ctrl.getBillLink);
 router.get("/billname/:jobId", ctrl.getBillNameByJobId);
 router.post("/send-bill", ctrl.sendBillViaWhatsApp);
 
+
+
 // Expense routes
 router.post("/expense", ctrl.addExpense);
 router.get("/expenses", ctrl.getExpenses);

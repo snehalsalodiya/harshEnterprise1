@@ -9,6 +9,59 @@ const twilio = require("twilio");
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const twilioPhoneNumber = "whatsapp:+14155238886";
 
+
+
+// ✅ Get public bill link
+exports.getBillLink = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId));
+  if (!file) return res.status(404).json({ error: "No bill found" });
+
+  const fullUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
+  res.json({ url: fullUrl });
+};
+
+// ✅ Serve the bill PDF
+exports.getBill = (req, res) => {
+  const filePath = path.join(__dirname, "../bills", req.params.fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
+
+  res.setHeader("Content-Disposition", "inline");
+  res.setHeader("Content-Type", "application/pdf");
+  res.sendFile(filePath);
+};
+
+// ✅ Send bill to WhatsApp
+exports.sendBillViaWhatsApp = async (req, res) => {
+  const { jobId, number, partyName } = req.body;
+  const dir = path.join(__dirname, "../bills");
+
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
+  if (!file) return res.status(404).json({ error: "Bill PDF not found" });
+
+  const fileUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
+  console.log("📤 Sending file:", fileUrl);
+
+  try {
+    const message = await client.messages.create({
+      from: twilioPhoneNumber,
+      to: `whatsapp:+91${number}`,
+      body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
+      mediaUrl: [fileUrl],
+    });
+
+    res.json({ success: true, sid: message.sid });
+  } catch (err) {
+    console.error("❌ WhatsApp send error:", err.message);
+    res.status(500).json({ error: "Failed to send WhatsApp", details: err.message });
+  }
+};
+
 // 📥 Serve bill by job ID
 exports.getBillByJobId = (req, res) => {
   const jobId = req.params.jobId;
@@ -25,54 +78,6 @@ exports.getBillByJobId = (req, res) => {
   res.sendFile(filePath);
 };
 
-// 📜 Serve PDF by filename
-exports.getBill = (req, res) => {
-  const filePath = path.join(__dirname, "../bills", req.params.fileName);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
-
-  res.setHeader("Content-Disposition", "inline");
-  res.setHeader("Content-Type", "application/pdf");
-  res.sendFile(filePath);
-};
-
-// 🔗 Generate Bill Link by jobId
-exports.getBillLink = (req, res) => {
-  const jobId = req.params.jobId;
-  const dir = path.join(__dirname, "../bills");
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
-
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId));
-  if (!file) return res.status(404).json({ error: "No bill found" });
-
-  const fullUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
-  res.json({ url: fullUrl });
-};
-
-// 📲 Send Bill via WhatsApp (manual)
-exports.sendBillViaWhatsApp = async (req, res) => {
-  const { jobId, number, partyName } = req.body;
-  const dir = path.join(__dirname, "../bills");
-
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
-
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
-  if (!file) return res.status(404).json({ error: "Bill PDF not found" });
-
-  const fileUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
-
-  try {
-    const msg = await client.messages.create({
-      from: twilioPhoneNumber,
-      to: `whatsapp:+91${number}`,
-      body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
-      mediaUrl: [fileUrl],
-    });
-
-    res.json({ success: true, sid: msg.sid });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to send WhatsApp", details: err.message });
-  }
-};
 
 
 // ✅ NEW: GET /billname/:jobId
