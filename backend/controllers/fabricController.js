@@ -1,15 +1,15 @@
 const FabricJob = require("../models/Fabricjob");
 const Expense = require("../models/Expense");
-const RateConfig = require('../models/rateConfig');
+const RateConfig = require("../models/rateConfig");
 const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 const twilio = require("twilio");
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const twilioPhoneNumber = "whatsapp:+14155238886"; // Ensure you configure correctly
+const twilioPhoneNumber = "whatsapp:+14155238886";
 
-// 🔔 Helper to send WhatsApp with PDF
+// ✅ WhatsApp PDF Sender
 const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   try {
     await client.messages.create({
@@ -25,10 +25,9 @@ const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   }
 };
 
-// 📦 Create a job
+// 📦 Create Job
 exports.createJob = async (req, res) => {
   const { partyName, fabricType, quantity, rate, mobileNumber } = req.body;
-
   if (!partyName || !fabricType || !quantity || !rate || !mobileNumber) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -39,8 +38,7 @@ exports.createJob = async (req, res) => {
     await job.save();
     res.json({ message: "✅ Job created successfully", job });
   } catch (err) {
-    console.error("❌ Error creating job:", err);
-    res.status(500).json({ error: "Server error while creating job" });
+    res.status(500).json({ error: "Error creating job" });
   }
 };
 
@@ -64,12 +62,11 @@ exports.scanJob = async (req, res) => {
       mobileNumber: job.mobileNumber
     });
   } catch (err) {
-    console.error("❌ Scan error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
 
-// 🔁 Update Job Stage
+// 🔁 Update Stage
 exports.updateStage = async (req, res) => {
   const jobId = req.body.jobId.trim();
   const stage = req.body.stage;
@@ -82,8 +79,7 @@ exports.updateStage = async (req, res) => {
     await job.save();
     res.json({ message: `✅ Stage updated to ${stage}` });
 
-    // Record Expense
-    if (stage === "coated" || stage === "washed") {
+    if (["coated", "washed"].includes(stage)) {
       const config = await RateConfig.findOne();
       if (config) {
         const rate = stage === "coated" ? config.coatingRate : config.washingRate;
@@ -93,133 +89,212 @@ exports.updateStage = async (req, res) => {
       }
     }
 
-    // On Delivery, generate bill & send
     if (stage === "delivered") {
       try {
         const filePath = await exports.generatePDFBill(job);
-        const billUrl = `https://harshenterprise123.onrender.com/api/fabric/bill/${path.basename(filePath)}`;
+        const billUrl = `${process.env.BASE_URL}/api/fabric/bill/${path.basename(filePath)}`;
         await sendWhatsAppPDF(job.mobileNumber, billUrl, job.partyName, job.jobId);
-        console.log("✅ Bill sent via WhatsApp");
       } catch (err) {
         console.error("❌ Failed to generate/send bill:", err.message);
       }
     }
   } catch (err) {
-    console.error("❌ Stage update error:", err.message);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Error updating stage" });
   }
 };
 
-// 🧾 Generate PDF Bill
+// 🧾 Generate Bill PDF
 exports.generatePDFBill = async (job) => {
-  const dir = path.join(__dirname, '../bills');
+  const dir = path.join(__dirname, "../bills");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 
-  const cleanParty = job.partyName.replace(/\s+/g, '_');
   const now = new Date();
   const dateStr = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
+  const cleanParty = job.partyName.replace(/\s+/g, "_").toLowerCase();
   const filename = `${cleanParty}_${job.jobId}_${dateStr}.pdf`;
   const filePath = path.join(dir, filename);
-  const doc = new PDFDocument({ margin: 40 });
 
+  const doc = new PDFDocument({ margin: 40 });
   doc.pipe(fs.createWriteStream(filePath));
 
-  doc.rect(27, 20, 555, 750).strokeColor('#80602f').lineWidth(1.5).stroke();
-
   try {
-    const pageWidth = doc.page.width;
-    const centerX = (pageWidth - 100) / 2;
-    doc.image(path.join(__dirname, '../Utilities/logo.png'), centerX, 30, { width: 100 });
-  } catch { console.warn("⚠️ Logo not found"); }
+    doc.image(path.join(__dirname, "../Utilities/logo.png"), 250, 30, { width: 100 });
+  } catch { }
 
-  doc.fontSize(20).fillColor('#80602f').text('Harsh Enterprise', 35, 120);
+  doc.fontSize(20).fillColor("#80602f").text("Harsh Enterprise", 35, 120);
+  doc.fontSize(13).fillColor("#000")
+    .text("ADDRESS : No.33/1, JBJ Compound, Near Dharmesh Dyeing, Khatodra, Surat-395002")
+    .text("EMAIL : HarshEnterprise@gmail.com")
+    .text("CONTACT : +91-8238271922 | +91-9979526411")
+    .text("GSTIN : 24ISAPS4752R1ZW")
+    .moveDown();
 
-  doc.fontSize(13).fillColor('#000')
-    .text('ADDRESS : No.33/1, 1st Floor, JBJ Compound, Near Dharmesh Dyeing,')
-    .text('Behind Subjail, Khatodra, Surat-395002')
-    .text('EMAIL : HarshEnterprise@gmail.com')
-    .text('CONTACT : +91-8238271922')
-    .text('CONTACT : +91-9979526411')
-    .text('GSTIN : 24ISAPS4752R1ZW');
-
-  doc.moveDown(1.5);
-  doc.fontSize(13).fillColor('#80602f')
-    .text(`INVOICE NO.: ${job.jobId}              Invoice Date: ${dateStr}`);
-
-  doc.moveDown(2).fontSize(13).fillColor('#80602f').text('BILL TO: ').fillColor('#000').text(job.partyName);
-  doc.moveDown(1);
-
-  const colDescX = 35, colQtyX = 280, colUnitX = 350, colTotalX = 440;
-  const headerY = doc.y + 5;
-
-  doc.fontSize(13).fillColor('#80602f')
-    .text('DESCRIPTION', colDescX, headerY, { width: 200 })
-    .text('QTY', colQtyX, headerY, { width: 50, align: 'right' })
-    .text('UNIT PRICE', colUnitX, headerY, { width: 80, align: 'right' })
-    .text('TOTAL', colTotalX, headerY, { width: 80, align: 'right' });
-
-  doc.moveTo(colDescX, doc.y + 2).lineTo(550, doc.y + 2).stroke();
+  doc.fillColor("#80602f")
+    .text(`INVOICE NO.: ${job.jobId}              Invoice Date: ${dateStr}`)
+    .moveDown()
+    .text("BILL TO: ").fillColor("#000").text(job.partyName).moveDown();
 
   const amount = job.quantity * job.rate;
   const cgst = amount * 0.025;
   const sgst = amount * 0.025;
   const grandTotal = amount + cgst + sgst;
 
-  const rowY = doc.y + 5;
-  doc.fillColor('#000')
-    .text(job.fabricType, colDescX, rowY)
-    .text(job.quantity.toString(), colQtyX, rowY, { align: 'right' })
-    .text(job.rate.toFixed(2), colUnitX, rowY, { align: 'right' })
-    .text(amount.toFixed(2), colTotalX, rowY, { align: 'right' });
+  doc.fontSize(13).text("DESCRIPTION", 35).text("FABRIC", 35, doc.y)
+    .text("QTY", 280).text(job.quantity.toString(), 280, doc.y)
+    .text("UNIT PRICE", 350).text(job.rate.toFixed(2), 350, doc.y)
+    .text("TOTAL", 440).text(amount.toFixed(2), 440, doc.y);
 
-  doc.moveTo(colDescX, rowY + 15).lineTo(550, rowY + 15).stroke();
-
-  doc.moveDown(2).fontSize(13)
+  doc.moveDown().fontSize(13)
     .text(`SUBTOTAL        : ${amount.toFixed(2)}`, 384)
     .text(`CGST @ 2.5%  : ${cgst.toFixed(2)}`, 384)
     .text(`SGST @ 2.5%  : ${sgst.toFixed(2)}`, 384)
-    .fillColor('#80602f')
+    .fillColor("#80602f")
     .text(`GRAND TOTAL : ${grandTotal.toFixed(2)}`, 384);
 
-  doc.fillColor('#000').moveDown(5).text('Seal & Signature', 384);
-  doc.moveTo(384, doc.y + 15).lineTo(550, doc.y + 15).stroke();
-
+  doc.fillColor("#000").moveDown(5).text("Seal & Signature", 384);
   doc.end();
   return filePath;
 };
 
-// 📲 Send PDF via WhatsApp manually
+// 📲 Send Bill via WhatsApp (manual)
 exports.sendBillViaWhatsApp = async (req, res) => {
   const { jobId, number, partyName } = req.body;
-
-  if (!jobId || !number || !partyName) {
-    return res.status(400).json({ error: "Missing jobId, number or partyName" });
-  }
-
   const dir = path.join(__dirname, "../bills");
+
   if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
 
   const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
-  if (!file) return res.status(404).json({ error: "Bill PDF not found for this job ID" });
+  if (!file) return res.status(404).json({ error: "Bill PDF not found" });
 
-  const fileUrl = `https://harshenterprise123.onrender.com/api/fabric/bill/${file}`;
+  const fileUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
 
   try {
-    const message = await client.messages.create({
+    const msg = await client.messages.create({
       from: twilioPhoneNumber,
       to: `whatsapp:+91${number}`,
       body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
       mediaUrl: [fileUrl],
     });
 
-    res.json({ success: true, sid: message.sid });
+    res.json({ success: true, sid: msg.sid });
   } catch (err) {
-    console.error("❌ WhatsApp send error:", err.message);
-    res.status(500).json({ error: "Failed to send WhatsApp message", details: err.message });
+    res.status(500).json({ error: "Failed to send WhatsApp", details: err.message });
   }
 };
 
-// 💹 Stats and Analytics
+// 📜 Serve PDF
+exports.getBill = (req, res) => {
+  const filePath = path.join(__dirname, "../bills", req.params.fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
+
+  res.setHeader("Content-Disposition", "inline");
+  res.setHeader("Content-Type", "application/pdf");
+  res.sendFile(filePath);
+};
+
+// 📥 Generate link to bill PDF
+exports.getBillLink = (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId));
+  if (!file) return res.status(404).json({ error: "No bill found" });
+
+  const fullUrl = `${process.env.BASE_URL}/api/fabric/bill/${file}`;
+  res.json({ url: fullUrl });
+};
+
+// 📦 Expense logic
+exports.addExpense = async (req, res) => {
+  const { type, description, amount } = req.body;
+  if (!type || !amount) return res.status(400).json({ error: "Type & amount required" });
+
+  const gst = amount * 0.05;
+  const exp = new Expense({ type, description, amount, gst });
+  await exp.save();
+  res.json({ message: "Expense recorded", exp });
+};
+
+exports.getExpenses = async (req, res) => {
+  const data = await Expense.find().sort({ date: -1 });
+  res.json(data);
+};
+
+exports.searchExpenses = async (req, res) => {
+  const { partyName, date } = req.query;
+  const query = {};
+
+  if (partyName) query.description = { $regex: partyName, $options: "i" };
+  if (date) {
+    const start = new Date(date);
+    const end = new Date(date); end.setDate(end.getDate() + 1);
+    query.date = { $gte: start, $lt: end };
+  }
+
+  const data = await Expense.find(query).sort({ date: -1 });
+  res.json(data);
+};
+
+// 🔍 Job search
+exports.searchJobs = async (req, res) => {
+  const { partyName } = req.query;
+  const jobs = await FabricJob.find({ partyName: { $regex: partyName, $options: "i" } });
+  res.json(jobs);
+};
+
+// 📊 Job summary
+exports.getJobSummaryWithExpenses = async (req, res) => {
+  const job = await FabricJob.findOne({ jobId: req.params.jobId });
+  if (!job) return res.status(404).json({ error: "Job not found" });
+
+  const expenses = await Expense.find({ description: { $regex: job.jobId } });
+  const coating = expenses.filter(e => e.type === "coated").reduce((sum, e) => sum + e.amount, 0);
+  const washing = expenses.filter(e => e.type === "washed").reduce((sum, e) => sum + e.amount, 0);
+
+  res.json({
+    partyName: job.partyName,
+    fabricType: job.fabricType,
+    stage: job.stage,
+    coatingBill: coating,
+    washingBill: washing,
+  });
+};
+
+// 🧾 Bill filename lookup
+exports.getBillNameByJobId = async (req, res) => {
+  const jobId = req.params.jobId;
+  const dir = path.join(__dirname, "../bills");
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: "No bill directory" });
+
+  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith(".pdf"));
+  if (!file) return res.status(404).json({ error: "No bill found" });
+  res.json({ billName: file });
+};
+
+// ⚙️ Rate Config
+exports.setRates = async (req, res) => {
+  const { coatingRate, washingRate } = req.body;
+  if (coatingRate == null || washingRate == null) return res.status(400).json({ error: "Rates required" });
+
+  let config = await RateConfig.findOne();
+  if (!config) config = new RateConfig({ coatingRate, washingRate });
+  else {
+    config.coatingRate = coatingRate;
+    config.washingRate = washingRate;
+  }
+
+  await config.save();
+  res.json({ message: "Rates updated", config });
+};
+
+exports.getRates = async (req, res) => {
+  const config = await RateConfig.findOne();
+  if (!config) return res.status(404).json({ error: "Rates not set" });
+  res.json(config);
+};
+
+// 📈 Dashboard Stats
 exports.getStats = async (req, res) => {
   const totalJobs = await FabricJob.countDocuments();
   const totalExpenses = await Expense.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]);
@@ -238,116 +313,4 @@ exports.getChartData = async (req, res) => {
   const stageCounts = await FabricJob.aggregate([{ $group: { _id: "$stage", count: { $sum: 1 } } }]);
   const monthWiseExpenses = await Expense.aggregate([{ $group: { _id: { $month: "$date" }, total: { $sum: "$amount" } } }]);
   res.json({ stageCounts, monthWiseExpenses });
-};
-
-// 💰 Expenses
-exports.addExpense = async (req, res) => {
-  const { type, description, amount } = req.body;
-  if (!type || !amount) return res.status(400).json({ error: "Type and amount required" });
-
-  const gst = amount * 0.05;
-  const exp = new Expense({ type, description, amount, gst });
-  await exp.save();
-  res.json({ message: "Expense recorded", exp });
-};
-
-exports.getExpenses = async (req, res) => {
-  const data = await Expense.find().sort({ date: -1 });
-  res.json(data);
-};
-
-exports.searchExpenses = async (req, res) => {
-  const { partyName, date } = req.query;
-  const query = {};
-
-  if (partyName) query.description = { $regex: partyName, $options: 'i' };
-  if (date) {
-    const start = new Date(date);
-    const end = new Date(date);
-    end.setDate(end.getDate() + 1);
-    query.date = { $gte: start, $lt: end };
-  }
-
-  const data = await Expense.find(query).sort({ date: -1 });
-  res.json(data);
-};
-
-// 🔍 Job Search
-exports.searchJobs = async (req, res) => {
-  const { partyName } = req.query;
-  const jobs = await FabricJob.find({ partyName: { $regex: partyName, $options: 'i' } });
-  res.json(jobs);
-};
-
-// 📊 Job Summary
-exports.getJobSummaryWithExpenses = async (req, res) => {
-  const job = await FabricJob.findOne({ jobId: req.params.jobId });
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  const expenses = await Expense.find({ description: { $regex: job.jobId } });
-  const coating = expenses.filter(e => e.type === "coated").reduce((sum, e) => sum + e.amount, 0);
-  const washing = expenses.filter(e => e.type === "washed").reduce((sum, e) => sum + e.amount, 0);
-
-  res.json({
-    partyName: job.partyName,
-    fabricType: job.fabricType,
-    stage: job.stage,
-    coatingBill: coating,
-    washingBill: washing
-  });
-};
-
-// 📜 Bill File Utilities
-exports.getBillNameByJobId = async (req, res) => {
-  const jobId = req.params.jobId;
-  const dir = path.join(__dirname, '../bills');
-
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
-  const file = fs.readdirSync(dir).find(f => f.includes(jobId) && f.endsWith('.pdf'));
-
-  if (!file) return res.status(404).json({ error: "Bill PDF not found for this jobId" });
-  res.json({ billName: file });
-};
-
-exports.getBill = (req, res) => {
-  const filePath = path.join(__dirname, '../bills', req.params.fileName);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Bill not found" });
-
-  res.setHeader("Content-Disposition", "inline");
-  res.setHeader("Content-Type", "application/pdf");
-  res.sendFile(filePath);
-};
-
-exports.getBillLink = (req, res) => {
-  const jobId = req.params.jobId;
-  const dir = path.join(__dirname, "../bills");
-
-  if (!fs.existsSync(dir)) return res.status(404).json({ error: "Bill directory not found" });
-  const file = fs.readdirSync(dir).find((f) => f.includes(jobId));
-  if (!file) return res.status(404).json({ error: "Bill not found for this job ID" });
-
-  const fullUrl = `${process.env.BASE_URL}/bills/${file}`;
-  res.json({ url: fullUrl });
-};
-
-// ⚙️ Rate config
-exports.setRates = async (req, res) => {
-  const { coatingRate, washingRate } = req.body;
-  if (coatingRate == null || washingRate == null) return res.status(400).json({ error: "Both rates required" });
-
-  let config = await RateConfig.findOne();
-  if (!config) config = new RateConfig({ coatingRate, washingRate });
-  else {
-    config.coatingRate = coatingRate;
-    config.washingRate = washingRate;
-  }
-
-  await config.save();
-  res.json({ message: "Rates updated", config });
-};
-
-exports.getRates = async (req, res) => {
-  const config = await RateConfig.findOne();
-  if (!config) return res.status(404).json({ error: "Rates not set" });
-  res.json(config);
 };
