@@ -40,7 +40,7 @@ const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
 
     // Upload to Twilio Media
     const mediaUploadRes = await axios.post(
-      "https://mcs.us1.twilio.com/v1/Services/default/Media",
+      "https://mcs.us1.twilio.com/v1/Services/MGaa68392be7d37cf2b16a4dc1490438c9/Media",
       fileData,
       {
         headers: {
