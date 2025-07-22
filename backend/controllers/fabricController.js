@@ -34,10 +34,10 @@ exports.sendBillViaWhatsApp = async (req, res) => {
 const sendWhatsAppPDF = async (number, fileUrl, partyName, jobId) => {
   try {
     await client.messages.create({
-      from: process.env.TWILIO_WHATSAPP_NUMBER, // e.g., 'whatsapp:+14155238886'
-      to: `whatsapp:+91${number}`,
+      from: 'whatsapp:+14155238886', // ✅ Sandbox FROM number
+      to: `whatsapp:+91${number}`,   // ✅ Recipient must have joined sandbox
       body: `Hello ${partyName}, here is your bill for job ${jobId}.`,
-      mediaUrl: [fileUrl], // ✅ Use public PDF URL directly
+      mediaUrl: [fileUrl],           // ✅ Must be public and return correct Content-Type
     });
 
     console.log("✅ WhatsApp PDF sent to", number);
@@ -178,9 +178,11 @@ exports.updateStage = async (req, res) => {
       const filePath = await exports.generatePDFBill(job);
       const billUrl = `http://localhost:5000/api/fabric/bill/${path.basename(filePath)}`;
 
-      const mobileNumber = job.mobileNumber.replace(/^(\+91|0)/, '');
-      await sendWhatsAppPDF(mobileNumber, billUrl, job.partyName, job.jobId);
-      console.log("✅ Bill sent via WhatsApp");
+      // const mobileNumber = job.mobileNumber.replace(/^(\+91|0)/, '');
+      // await sendWhatsAppPDF(mobileNumber, billUrl, job.partyName, job.jobId);
+      // console.log("✅ Bill sent via WhatsApp");
+
+      
     } catch (err) {
       console.error("❌ Failed to send WhatsApp or generate bill:", err.message);
     }
